@@ -17,3 +17,9 @@ Our work is built on top of the mmdiffusion framework and includes several impor
 	•	order: evaluated both 2nd and 3rd order solvers, settled on order=2 for stability.
 	•	skip_type: switched from "time_uniform" to "logSNR" for improved convergence.
 	•	method: "singlestep" sampling for faster inference.
+ ## 3. Additional Exploration
+	•	Experimented with Real-ESRGAN for further quality enhancement, but results were not as effective as the retrained SR model.
+	•	Considered architectural improvements to multimodal_unet, including:
+	•	Enhancements to CrossAttentionBlock.
+	•	RoPE (Rotary Position Embedding) integration for improved temporal modeling.
+	•	These were not implemented in the final submission due to time constraints, but are promising future directions.
