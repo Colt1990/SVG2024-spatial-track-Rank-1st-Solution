@@ -228,12 +228,15 @@ class TrainLoop:
                     
             batch = next(self.data)
             # print(f"time to fetch a batch: {time.time()-time_start}")
-        
+
+            # print(">>>before run step")
             loss = self.run_step(batch)
+            # print(">>>after run step")
             
             if dist.get_rank() == 0 and self.use_db:
                 wandb_log = { 'loss': loss["loss"].mean().item()}
-                
+            
+            print(">>> STEP logintv save_intv: ", self.step, self.log_interval, self.save_interval)
             if self.step % self.log_interval == 0:
                 log = logger.get_current()
                 if dist.get_rank() == 0 and self.use_db:
@@ -241,11 +244,11 @@ class TrainLoop:
                         'v_grad':log.name2val["grad_norm_v"], 'a_grad':log.name2val["grad_norm_a"]})
                 logger.dumpkvs()
 
-            if self.step % self.save_interval == 0:
+            if self.step % self.save_interval == 1:
                
                 self.save()
                 # Run for a finite amount of time in integration tests.
-               
+                print(">>>bef save_video")
                 output_path=self.save_video() 
                 if dist.get_rank() == 0 and self.use_db:
                     if output_path.endswith('gif'):
@@ -266,14 +269,19 @@ class TrainLoop:
 
     def run_step(self, batch, cond={}):
         self.mp_trainer.zero_grad()  
+        # print(">>>bef run_step")
         loss = self.forward_backward(batch, cond)
+        # print(">>>after run_step")
         took_step = self.mp_trainer.optimize(self.opt)
         
         if took_step:
+            # print(">>> TOOK STEP")
             self._update_ema()
+            # print(">>> AFTER STEP")
         
         self._anneal_lr()
         self.log_step()
+        # print(">>> log STEP")
         
         return loss
 
@@ -328,6 +336,7 @@ class TrainLoop:
             )
            
         return losses
+    
 
     def _update_ema(self):
         for rate, params in zip(self.ema_rate, self.ema_params):
@@ -377,19 +386,24 @@ class TrainLoop:
                 #     'audio':[self.batch_size, *self.model.audio_size]},\
                 #     'total_N': len(self.diffusion.betas), \
                 #     'model_fn': self.model})
-
+################ investigate here!!!!! 
                 dpm_solver = DPM_Solver(model=self.model, \
                     alphas_cumprod=th.tensor(self.diffusion.alphas_cumprod))
                 x_T = {"video":th.randn([self.batch_size, *self.model.video_size]).to(dist_util.dev()), \
                         "audio":th.randn([self.batch_size, *self.model.audio_size]).to(dist_util.dev())}
                 sample = dpm_solver.sample(
                     x_T,
-                    steps=20,
-                    order=2,
-                    skip_type="logSNR",
-                    method="adaptive",
+                    steps=50,
+                    order=3,
+                    skip_type="time_uniform", #"logSNR",
+                    method="singlestep",
+                    # steps=20,
+                    # order=2,
+                    # skip_type="logSNR",
+                    # method="adaptive",
                 )
             elif self.sample_fn == "dpm_solver++":
+                print('using dpm_solver++')
                 dpm_solver = DPM_Solver(model=self.model, \
                     alphas_cumprod=th.tensor(self.diffusion.alphas_cumprod),
                     predict_x0=True, thresholding=True)
@@ -398,15 +412,21 @@ class TrainLoop:
                 
                 sample = dpm_solver.sample(
                     x_T,
-                    steps=20,
-                    order=2,
-                    skip_type="logSNR",
+                    # steps=200,
+                    # order=2,
+                    # skip_type="time_uniform", #"logSNR",
+                    # method="adaptive",
+                    steps=250,  # 增加到 250 步
+                    order=2,    # 提高到三阶
+                    skip_type="time_uniform",  # 更优的时间步分布
                     method="adaptive",
                 )
             else:
                 sample_fn = (
                 self.diffusion.p_sample_loop if not self.sample_fn == 'ddim' else self.diffusion.ddim_sample_loop
                 )
+                print(f"now using {self.sample_fn}")
+                print(self.diffusion.num_timesteps)
                 sample_dict.update({'model':self.model, 'clip_denoised': True})
                 sample_dict.update({'shape':{'video':[self.batch_size, *self.model.video_size],'audio':[self.batch_size, *self.model.audio_size]}  \
                 })
@@ -445,11 +465,12 @@ class TrainLoop:
                 for video, audio in zip(all_videos, all_audios):
                     imgs = [img for img in video]
                     audio = audio.T #[len, channel]
-                    audio = np.repeat(audio, 2, axis=1)
+                    # audio = np.repeat(audio, 2, axis=1)
                     audio_clip = AudioArrayClip(audio, fps=self.audio_fps)
    
                     video_clip = ImageSequenceClip(imgs, fps=self.video_fps)
-                    video_clip = video_clip.set_audio(audio_clip)
+                    # video_clip = video_clip.set_audio(audio_clip) 
+                    video_clip = video_clip.with_audio(audio_clip)
                     output_mp4_path =  os.path.join(logger.get_dir(), f"{self.sample_fn}_samples_steps{self.step}_{vid}.{self.save_type}")
                     video_clip.write_videofile(output_mp4_path, self.video_fps, audio=True, audio_fps=self.audio_fps)
                     vid += 1

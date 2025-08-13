@@ -1,0 +1,6 @@
+Logging to /data/stan_2024/20_2024_sony/MM-Diffusion/test_output
+creating model and diffusion...
+models waiting to be evaluated:['/data/stan_2024/20_2024_sony/svg-2024-spatial-track-starter-kit-master/models/pretrained_models/model330011.pt']
+**********keys not initialize in model***********
+**********keys not used in state_dict***********
+sampling samples for /data/stan_2024/20_2024_sony/svg-2024-spatial-track-starter-kit-master/models/pretrained_models/model330011.pt

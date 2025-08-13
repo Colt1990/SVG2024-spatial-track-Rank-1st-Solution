@@ -14,6 +14,11 @@ from .losses import normal_kl, discretized_gaussian_log_likelihood
 from . import dist_util
 
 
+
+def mean_flat(tensor):
+    return tensor.mean(dim=list(range(1, len(tensor.shape))))
+
+
 def get_named_beta_schedule(schedule_name, num_diffusion_timesteps):
     """
     Get a pre-defined beta schedule for the given name.
@@ -257,7 +262,7 @@ class GaussianDiffusion:
             
         B = x["video"].shape[0]
         assert t.shape == (B,)
-        
+        print(">>>> ", x["video"].shape, x["audio"].shape)
         video_output, audio_output = model(x["video"], x["audio"], self._scale_timesteps(t), **model_kwargs) # when ddim, t is not mapped
         
         def process_xstart(x):
@@ -317,6 +322,8 @@ class GaussianDiffusion:
                     '''
                     if the model predicts the epsilon, pred xstart from predicted eps, then pred x_{t-1}
                     '''
+                    # print(">>> model_output: ", model_output.shape)
+                    # print(">>> xxxx: ", x.shape)
                     pred_xstart = process_xstart(
                         self._predict_xstart_from_eps(x_t=x, t=t, eps=model_output)
                     )
@@ -1139,7 +1146,10 @@ class GaussianDiffusion:
         audio_t = self.q_sample(audio_start, t, noise = noise["audio"])
   
         video_output, audio_output = model(video_t, audio_t, self._scale_timesteps(t),  **model_kwargs)
-     
+
+
+        print(">>>> videooutput,start : ", video_output.shape, video_start.shape)
+        print(">>>> output,start : ", audio_output.shape, audio_start.shape)
         video_loss = {}
         audio_loss = {}
         if self.loss_type == LossType.MSE or self.loss_type == LossType.RESCALED_MSE:
@@ -1158,6 +1168,7 @@ class GaussianDiffusion:
                 audio_frozen_out = th.cat([audio_output.detach(), audio_var_values], dim=1)
                 frozen_out = {"video": video_frozen_out, "audio": audio_frozen_out}
                 x_t = {"video": video_t, "audio": audio_t}
+                # print(">> x_startaudio: ", x_start["audio"].shape)
                 vb_loss = self._vb_terms_bpd(
                     model=lambda *args, r=frozen_out: [r["video"], r["audio"]],
                     x_start=x_start,
@@ -1190,17 +1201,132 @@ class GaussianDiffusion:
               
             video_loss["mse"] = mean_flat((video_target - video_output) ** 2)    
             audio_loss["mse"] = mean_flat((audio_target - audio_output) ** 2)
+
+        # video_mean = video_output.mean(dim=(2, 3, 4))  # [B, F]
+        # audio_mean = audio_output.mean(dim=2)  # [B, T]
+        # # 对齐时间维度：将 audio_mean 插值到 F，或将 video_mean 平均到 T
+        # if video_mean.shape[1] > audio_mean.shape[1]:
+        #     # 将 audio_mean 插值到 video 的帧数
+        #     audio_mean = F.interpolate(audio_mean.unsqueeze(0), size=video_mean.shape[1], mode='linear', align_corners=False).squeeze(0)
+        # else:
+        #     # 将 video_mean 平均到 audio 的时间步
+        #     video_mean = video_mean.mean(dim=1, keepdim=True).expand(-1, audio_mean.shape[1])
+        # cross_loss = -F.cosine_similarity(video_mean, audio_mean).mean()
+        
             
         term = {"loss":0}
- 
+        
         for key in video_loss.keys():
             term[f"{key}_video"] = video_loss[key]
             term[f"{key}_audio"] =  audio_loss[key]
             # term[f"{key}_all"] = video_mask * video_loss[key] + audio_mask * audio_loss[key]
             term["loss"] += term[f"{key}_video"] + term[f"{key}_audio"]
-  
 
+        # term['cross_loss']=cross_loss
+        # term["loss"]+=term['cross_loss']
         return term
+
+    # def multimodal_training_losses(self, model, x_start, t, model_kwargs=None, noise=None):
+    #     """
+    #     Compute training losses for a single timestep.
+    #     """
+    #     video_start = x_start['video']  # [B, F, C, H, W]
+    #     audio_start = x_start['audio']  # [B, T, C]
+    #     if model_kwargs is None:
+    #         model_kwargs = {}
+    #     if noise is None:
+    #         noise = {
+    #             "video": torch.randn_like(video_start),
+    #             "audio": torch.randn_like(audio_start)
+    #         }
+
+    #     video_t = self.q_sample(video_start, t, noise=noise["video"])
+    #     audio_t = self.q_sample(audio_start, t, noise=noise["audio"])
+
+    #     video_output, audio_output = model(video_t, audio_t, self._scale_timesteps(t), **model_kwargs)
+
+    #     # 调试输入和输出
+    #     logger.info(f"video_start shape: {video_start.shape}, min: {video_start.min()}, max: {video_start.max()}")
+    #     logger.info(f"video_output shape: {video_output.shape}, requires_grad: {video_output.requires_grad}, min: {video_output.min()}, max: {video_output.max()}")
+    #     logger.info(f"audio_start shape: {audio_start.shape}, min: {audio_start.min()}, max: {audio_start.max()}")
+    #     logger.info(f"audio_output shape: {audio_output.shape}, requires_grad: {audio_output.requires_grad}, min: {audio_output.min()}, max: {audio_output.max()}")
+
+    #     video_loss = {}
+    #     audio_loss = {}
+
+    #     # 确保损失类型正确
+    #     logger.info(f"loss_type: {self.loss_type}, model_var_type: {self.model_var_type}, model_mean_type: {self.model_mean_type}")
+    #     if self.loss_type in ["mse", "rescaled_mse"]:
+    #         if self.model_var_type in ["learned", "learned_range"]:
+    #             video_output, video_var_values = torch.split(video_output, video_start.shape[2], dim=2)
+    #             audio_output, audio_var_values = torch.split(audio_output, audio_start.shape[1], dim=1)
+    #             video_frozen_out = torch.cat([video_output.detach(), video_var_values], dim=2)
+    #             audio_frozen_out = torch.cat([audio_output.detach(), audio_var_values], dim=1)
+    #             frozen_out = {"video": video_frozen_out, "audio": audio_frozen_out}
+    #             x_t = {"video": video_t, "audio": audio_t}
+    #             vb_loss = self._vb_terms_bpd(
+    #                 model=lambda *args, r=frozen_out: [r["video"], r["audio"]],
+    #                 x_start=x_start,
+    #                 x_t=x_t,
+    #                 t=t,
+    #                 clip_denoised=False,
+    #             )["output"]
+    #             video_loss["vb"] = vb_loss["video"]
+    #             audio_loss["vb"] = vb_loss["audio"]
+    #             if self.loss_type == "rescaled_mse":
+    #                 video_loss["vb"] *= self.num_timesteps / 1000.0
+    #                 audio_loss["vb"] *= self.num_timesteps / 1000.0
+
+    #         video_target = {
+    #             "previous_x": self.q_posterior_mean_variance(x_start=video_start, x_t=video_t, t=t)[0],
+    #             "start_x": video_start,
+    #             "epsilon": noise["video"],
+    #         }[self.model_mean_type]
+    #         audio_target = {
+    #             "previous_x": self.q_posterior_mean_variance(x_start=audio_start, x_t=audio_t, t=t)[0],
+    #             "start_x": audio_start,
+    #             "epsilon": noise["audio"],
+    #         }[self.model_mean_type]
+
+    #         # MSE 损失
+    #         video_diff = video_target - video_output
+    #         audio_diff = audio_target - audio_output
+    #         video_loss["mse"] = mean_flat(video_diff ** 2)
+    #         audio_loss["mse"] = mean_flat(audio_diff ** 2)
+
+    #         # 调试差值和损失
+    #         logger.info(f"video_diff min: {video_diff.min()}, max: {video_diff.max()}")
+    #         logger.info(f"audio_diff min: {audio_diff.min()}, max: {audio_diff.max()}")
+    #         logger.info(f"video_loss['mse']: {video_loss['mse']}")
+    #         logger.info(f"audio_loss['mse']: {audio_loss['mse']}")
+
+    #         # 帧间一致性损失
+    #         video_temporal_diff = video_output[:, 1:] - video_output[:, :-1]
+    #         video_loss["temporal"] = 0.05 * mean_flat(video_temporal_diff ** 2)
+    #         logger.info(f"video_temporal_diff min: {video_temporal_diff.min()}, max: {video_temporal_diff.max()}")
+    #         logger.info(f"video_loss['temporal']: {video_loss['temporal']}")
+
+    #         # 跨模态一致性损失
+    #         video_mean = video_output.mean(dim=(2, 3, 4))  # [B, F]
+    #         audio_mean = audio_output.mean(dim=2)  # [B, T]
+    #         cross_loss = -F.cosine_similarity(video_mean, audio_mean).mean()
+    #         logger.info(f"cross_loss: {cross_loss}")
+
+    #     # 初始化并累加损失
+    #     term = {"loss": torch.zeros(video_start.shape[0], device=video_start.device, requires_grad=True)}
+    #     for key in video_loss.keys():
+    #         term[f"{key}_video"] = video_loss[key]
+    #         term[f"{key}_audio"] = audio_loss.get(key, torch.zeros_like(term["loss"]))
+    #         term["loss"] = term["loss"] + term[f"{key}_video"] + term[f"{key}_audio"]
+    #     if "cross_loss" in locals():
+    #         term["cross"] = 0.1 * cross_loss
+    #         term["loss"] = term["loss"] + term["cross"]
+
+    #     # 调试最终结果
+    #     logger.info(f"term: {term}")
+    #     logger.info(f"term['loss'] shape: {term['loss'].shape}, requires_grad: {term['loss'].requires_grad}, grad_fn: {term['loss'].grad_fn}")
+    #     print(term)
+    #     return term
 
 
     def _motion_variance(self, predict, target):

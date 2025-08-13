@@ -20,7 +20,7 @@ def load_data(
     video_size,
     audio_size,
     deterministic=False,
-    random_flip=True,
+    random_flip=False,
     num_workers=0,
     video_fps=10,
     audio_fps=None,
@@ -51,11 +51,14 @@ def load_data(
     clip_length_in_frames = video_size[0]
     frames_between_clips = 1
     meta_fname = os.path.join(data_dir, f"video_clip_f{clip_length_in_frames}_g{frames_between_clips}_r{video_fps}.pkl")
-   
+    print(">>> meta_fname, data_dir:" , meta_fname, data_dir)
+
+    
     if not os.path.exists(meta_fname):
         if MPI.COMM_WORLD.Get_rank()==0:
             print(f"prepare {meta_fname}...")
         
+        print(">>> all_files: ",all_files)
         video_clips = VideoClips(
                 video_paths=all_files,
                 clip_length_in_frames=clip_length_in_frames, #64
@@ -71,6 +74,7 @@ def load_data(
     else:
         print(f"load {meta_fname}...")
         metadata = pickle.load(open(meta_fname, 'rb'))
+        print(">>> all_files2: ",all_files)
 
         video_clips = VideoClips(video_paths=all_files,
                 clip_length_in_frames=clip_length_in_frames, #64
@@ -89,6 +93,7 @@ def load_data(
         audio_fps = audio_fps,
         frame_gap = frame_gap
     )
+    print(f"multimodal dataset done~!.")
     
     if deterministic:
         loader = DataLoader(
@@ -146,6 +151,7 @@ class MultimodalDataset(Dataset):
         self.size = self.video_clips.num_clips()
         self.shuffle_indices = [i for i in list(range(self.size))[shard:][::num_shards]]
         random.shuffle(self.shuffle_indices)
+        print(f"multimodal dataset inside done~!.")
 
     def __len__(self):
         return len(self.shuffle_indices)
@@ -174,7 +180,9 @@ class MultimodalDataset(Dataset):
    
         while True:
             try:
+                # print(">>>>> vbefore GETITEM : ")
                 video, raw_audio, info, video_idx = self.video_clips.get_clip(idx)
+                # print(">>>>> after GETITEM : ")
             except Exception:
                 idx = (idx + 1) % self.video_clips.num_clips()
                 continue
@@ -189,6 +197,8 @@ class MultimodalDataset(Dataset):
 
         video_after_process = self.process_video(video)
         video_after_process = video_after_process.float() / 127.5 - 1 #0-1
+
+        
  
         video_idx, clip_idx = self.video_clips.get_clip_location(idx)
         duration_per_frame = self.video_clips.video_pts[video_idx][1] - self.video_clips.video_pts[video_idx][0]
@@ -200,20 +210,26 @@ class MultimodalDataset(Dataset):
     
         start_t = (clip_pid[0] / video_fps * 1. ).item()
         end_t = ((clip_pid[-1] + 1) / video_fps * 1. ).item()
-       
+
         video_path = self.video_clips.video_paths[video_idx]
         raw_audio =  AudioFileClip(video_path, fps=audio_fps).subclip(start_t, end_t)
         
+        # print("self.audio_size: ", self.audio_size)
         audio = np.zeros(self.audio_size)
         raw_audio= raw_audio.to_soundarray()
+        # print(audio.shape)
         if raw_audio.shape[1] == 2:
-            raw_audio = raw_audio[:, 0:1].T # pick one channel
+            #raw_audio = raw_audio[:, 0:1].T # pick one channel
+            raw_audio = raw_audio.T ### 
+            # print("channel audio: ", raw_audio.shape)
         if  raw_audio.shape[1] < self.audio_size[1]:
             audio[:, :raw_audio.shape[1]] = raw_audio
         elif  raw_audio.shape[1] >= self.audio_size[1]:
+            # print(raw_audio.shape[1])
             audio = raw_audio[:, :self.audio_size[1]]
-
-        audio = th.tensor(audio)
+        assert np.sum(audio)!=0
+        audio = th.tensor(audio) #* 80## EDITED
+        # print(video_after_process.shape,audio.shape)
         
         return video_after_process, audio
     
@@ -231,16 +247,16 @@ if __name__=='__main__':
     import torch.nn.functional as F
 
     audio_fps=16000
-    video_fps= 10
+    video_fps= 4
     batch_size=4
-    seconds = 1.6
+    seconds = 5 #1.6
     image_resolution=64
 
     dataset64=load_data(
-    data_dir="/data6/rld/data/landscape/test",
+    data_dir="/data/stan_2024/20_2024_sony/SVG2024-spatial-track-v0/video_dev/",
     batch_size=batch_size,
     video_size=[int(seconds*video_fps), 3, 64, 64],
-    audio_size=[1, int(seconds*audio_fps)],
+    audio_size=[2, int(seconds*audio_fps)],
     frame_gap=1,
     random_flip=False,
     num_workers=0,
@@ -254,5 +270,20 @@ if __name__=='__main__':
 
     while True:    
         group += 1
-        batch_video, batch_audio,  cond= next(dataset64)
-   
+        batch_video, batch_audio= next(dataset64)
+        print("batch_audioL ,video: ", batch_audio.shape, batch_video.shape) ## torch.Size([4, 2, 160000]) torch.Size([4, 40, 3, 64, 64])
+        batch_video = ((batch_video + 1) * 127.5).clamp(0, 255).to(th.uint8)
+        batch_video = batch_video.cpu().permute(0,1,3,4,2).numpy()
+        batch_audio = batch_audio.cpu().numpy()
+        for ii in range(batch_video.shape[0]):
+            
+            videos = batch_video[ii]
+            imgs = [img for img in videos]
+            audio = batch_audio[ii]
+            audio = audio.T
+            audio_clip = AudioArrayClip(audio, fps=audio_fps) 
+            video_clip = ImageSequenceClip(imgs, fps=video_fps)
+            video_clip = video_clip.with_audio(audio_clip)
+            output_mp4_path =  os.path.join("/data/stan_2024/20_2024_sony/SVG2024-spatial-track-v0/video_dev_normal/", f"{ii}.mp4")
+            video_clip.write_videofile(output_mp4_path, video_fps, audio=True, audio_fps=audio_fps)
+        break

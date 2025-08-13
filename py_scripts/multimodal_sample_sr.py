@@ -230,7 +230,8 @@ def main():
                     sample_fn = (
                         sr_diffusion.p_sample_loop if  args.sr_sample_fn=="ddpm" else sr_diffusion.ddim_sample_loop
                     )
-
+                    # print('=======================================')
+                    # print(args.sr_sample_fn,sample_fn)
                     sr_sample = sample_fn(
                         sr_model,
                         shape,

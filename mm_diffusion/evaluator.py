@@ -13,9 +13,9 @@ from evaluations.fvd.download import load_i3d_pretrained
 from evaluations.AudioCLIP.get_embedding import load_audioclip_pretrained, get_audioclip_embeddings_scores
 from .multimodal_datasets import load_data as load_multimodal_data
 from . import dist_util, logger
-VIDEO_SIZE=[16,3,224,224]
+# VIDEO_SIZE=[16,3,224,224]
 AUDIO_RATE=44100
-AUDIO_SIZE=[1, int(AUDIO_RATE*1.6)]
+# AUDIO_SIZE=[1, int(AUDIO_RATE*1.6)]
 BATCH_SIZE = 8
 
 def polynomial_mmd(X, Y):
@@ -36,12 +36,12 @@ def polynomial_mmd(X, Y):
 
     return mmd
 
-def load_multimodal_for_worker(base_dir, video_size):
+def load_multimodal_for_worker(base_dir, video_size, audio_size):
     data = load_multimodal_data(
         data_dir=base_dir,
         batch_size=BATCH_SIZE,
         video_size=video_size,
-        audio_size=AUDIO_SIZE,
+        audio_size=audio_size,
         num_workers=8,
         frame_gap=1,
         random_flip=False,
@@ -57,15 +57,15 @@ def load_multimodal_for_worker(base_dir, video_size):
         yield gt_batch
 
 
-def eval_multimodal(real_path, fake_path, video_size=[16,3,64,64], eval_num=2048):
+def eval_multimodal(real_path, fake_path, video_size=[20,3,64,64], audio_size=[2,80000], eval_num=2048):
     metric = {}
     #################### Load I3D ########################################
     i3d = load_i3d_pretrained(dist_util.dev())
     
     audioclip = load_audioclip_pretrained(dist_util.dev())
 
-    real_loader = load_multimodal_for_worker(real_path, video_size)
-    fake_loader = load_multimodal_for_worker(fake_path, video_size)
+    real_loader = load_multimodal_for_worker(real_path, video_size, audio_size)
+    fake_loader = load_multimodal_for_worker(fake_path, video_size, audio_size)
 
     fake_video_embeddings = []
     fake_audioclip_video_embeddings = []
@@ -167,7 +167,7 @@ def eval_multimodal(real_path, fake_path, video_size=[16,3,64,64], eval_num=2048
     #metric["clip_fvd"] = clip_fvd.item()
     #metric["clip_kvd"] = clip_kvd.item()
 
-    metric["fad"] = clip_fad.item() * 10000
+    metric["fad"] = clip_fad.item() * 1000
     #metric["clip_kad"] = clip_kad.item()
     #metric["clip_av_score"] =clip_av_score.item()
 
@@ -178,6 +178,7 @@ def main(
     parser = argparse.ArgumentParser()
     parser.add_argument("--ref_dir", type=str, default="/data6/rld/data/landscape/train", help="path to reference batch npz file")
     parser.add_argument("--fake_dir", type=str, default="/data6/rld/data/landscape/traine", help="path to sample batch npz file")
+    parser.add_argument("--video_size", type=list, default=[2], help="video size")
     parser.add_argument("--output_dir", type=str, default="../outputs/video-eval/debug", help="" )
     parser.add_argument("--sample_num", type=int, default=100)
     parser.add_argument("--batch_size", type=int, default=1)

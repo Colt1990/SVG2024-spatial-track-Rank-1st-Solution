@@ -178,7 +178,7 @@ def create_model(
         audio_size=audio_size,
         model_channels=num_channels,
         video_out_channels=(3 if not learn_sigma else 6),
-        audio_out_channels=(1 if not learn_sigma else 2),
+        audio_out_channels=2,#(1 if not learn_sigma else 2),
         num_res_blocks=num_res_blocks,
         cross_attention_resolutions=cross_attention_resolutions,
         cross_attention_windows=cross_attention_windows,

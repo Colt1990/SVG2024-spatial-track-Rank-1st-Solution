@@ -27,7 +27,9 @@ def delete_pkl(fake_dir):
 
 def save_audio(audio, output_path, audio_fps):
     audio = audio.T #[len, channel]
-    audio = np.repeat(audio, 2, axis=1)
+    if audio.shape[1] < 2:
+        audio = np.repeat(audio, 2, axis=1)
+    
     audio_clip = AudioArrayClip(audio, fps=audio_fps)
     audio_clip.write_audiofile(output_path, fps=audio_fps)
     return
@@ -46,10 +48,11 @@ def save_png(img, output_path):
 def save_multimodal(video, audio, output_path, args):
     imgs = [img for img in video]
     audio = audio.T #[len, channel]
-    audio = np.repeat(audio, 2, axis=1)
+    if audio.shape[1] < 2:
+        audio = np.repeat(audio, 2, axis=1)
     audio_clip = AudioArrayClip(audio, fps=args.audio_fps)
     video_clip = ImageSequenceClip(imgs, fps=args.video_fps)
-    video_clip = video_clip.set_audio(audio_clip)   
+    video_clip = video_clip.with_audio(audio_clip)   
     video_clip.write_videofile(output_path, args.video_fps, audio=True, audio_fps=args.audio_fps)
     return
 

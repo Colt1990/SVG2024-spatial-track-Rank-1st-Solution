@@ -2,6 +2,9 @@
 Train a diffusion model on audio-video pairs.
 """
 import sys,os
+# import os
+# os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
+
 sys.path.append(os.path.dirname (os.path.dirname (os.path.abspath (__file__))))
 import argparse
 from mm_diffusion import dist_util, logger
@@ -17,6 +20,10 @@ from mm_diffusion.multimodal_train_util import TrainLoop
 from mm_diffusion.common import set_seed_logger_random
 
 
+
+# os.environ["WORLD_SIZE"] = "1"
+# import torch
+
 def load_training_data(args):
     data = load_data(
         data_dir=args.data_dir,
@@ -25,7 +32,8 @@ def load_training_data(args):
         audio_size=args.audio_size,
         num_workers=args.num_workers,
         video_fps=args.video_fps,
-        audio_fps=args.audio_fps
+        audio_fps=args.audio_fps,
+        random_flip =args.random_flip
     )
    
     for video_batch, audio_batch in data:
@@ -109,6 +117,7 @@ def create_argparser():
         frame_gap=1,
         video_fps=10,
         audio_fps=16000,
+        random_flip= False
     )
     defaults.update(model_and_diffusion_defaults())
     parser = argparse.ArgumentParser()

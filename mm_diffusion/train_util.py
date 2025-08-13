@@ -59,7 +59,7 @@ class TrainLoop:
         sample_fn='ddpm',
         audio_fps=16000,
         num_classes=0,
-        save_row=8
+        save_row=2
     ):
         self.model = model
         self.diffusion = diffusion
@@ -281,6 +281,7 @@ class TrainLoop:
         ):
             lr, batch, sr, cond = next(self.data)
             
+            # print(">>>> auv: s", batch["audio"].shape, batch['video'].shape)
             loss = self.run_step(batch, cond)
             
             if dist.get_rank() == 0:

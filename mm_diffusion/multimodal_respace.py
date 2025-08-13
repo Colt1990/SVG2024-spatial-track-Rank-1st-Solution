@@ -58,6 +58,47 @@ def space_timesteps(num_timesteps, section_counts):
         start_idx += size
     return set(all_steps)
 
+# def space_timesteps(num_timesteps, section_counts, skip_type='logSNR', betas=None):
+#     if isinstance(section_counts, str):
+#         if section_counts.startswith("ddim"):
+#             desired_count = int(section_counts[len("ddim"):])
+#             for i in range(1, num_timesteps):
+#                 if len(range(0, num_timesteps, i)) == desired_count:
+#                     return set(range(0, num_timesteps, i))
+#             raise ValueError(f"cannot create {desired_count} steps")
+#         section_counts = [int(x) for x in section_counts.split(",")]
+#     total_steps = sum(section_counts) if isinstance(section_counts, list) else section_counts
+    
+#     if skip_type == 'logSNR' and betas is not None:
+#         # 使用原始 betas 计算 alphas_cumprod
+#         alphas = 1.0 - betas
+#         alphas_cumprod = np.cumprod(alphas)
+#         snr = alphas_cumprod / (1 - alphas_cumprod)  # 真实的 SNR
+#         log_snr = np.log(snr + 1e-6)  # 平滑
+#         log_snr = (log_snr - log_snr.min()) / (log_snr.max() - log_snr.min())
+#         indices = np.linspace(0, 1, total_steps)
+#         selected = np.interp(indices, log_snr, np.arange(num_timesteps))
+#         return set(np.round(selected).astype(int))
+#     else:
+#         # 原有逻辑
+#         size_per = num_timesteps // len(section_counts)
+#         extra = num_timesteps % len(section_counts)
+#         start_idx = 0
+#         all_steps = []
+#         for i, section_count in enumerate(section_counts):
+#             size = size_per + (1 if i < extra else 0)
+#             if size < section_count:
+#                 raise ValueError(f"cannot divide {size} into {section_count}")
+#             frac_stride = 1 if section_count <= 1 else (size - 1) / (section_count - 1)
+#             cur_idx = 0.0
+#             taken_steps = []
+#             for _ in range(section_count):
+#                 taken_steps.append(start_idx + round(cur_idx))
+#                 cur_idx += frac_stride
+#             all_steps += taken_steps
+#             start_idx += size
+#         return set(all_steps)
+
 
 class SpacedDiffusion(GaussianDiffusion):
     """

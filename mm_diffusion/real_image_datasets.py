@@ -17,7 +17,7 @@ def load_data(
     class_cond=False,
     deterministic=False,
     random_crop=False,
-    random_flip=False,
+    random_flip=True,
     num_workers=0,
 ):
     """

@@ -9,6 +9,7 @@ import blobfile as bf
 from mpi4py import MPI
 import torch as th
 import torch.distributed as dist
+import torch
 
 # Change this to reflect your cluster layout.
 # The GPU for a given rank is (rank % GPUS_PER_NODE).
@@ -32,6 +33,7 @@ def setup_dist(devices=None):
         os.environ["CUDA_VISIBLE_DEVICES"] =  f"{devices_list[MPI.COMM_WORLD.Get_rank() % GPUS_PER_NODE]}"
       
     comm = MPI.COMM_WORLD
+    # torch.cuda.set_device(os.environ["CUDA_VISIBLE_DEVICES"])
 
     backend = "gloo" if not th.cuda.is_available() else "nccl"
 

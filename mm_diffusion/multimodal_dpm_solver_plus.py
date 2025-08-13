@@ -306,10 +306,11 @@ def model_wrapper(
         else:
             video_output,audio_output = model(x["video"], x["audio"], t_input, cond, **model_kwargs)
 
+        # print(">>> model.audio_out_channels: ", audio_output.shape, video_output.shape)
         if model.video_out_channels == 6:
             video_output = video_output[:,:, :3,...]
         if model.audio_out_channels == 2:
-            audio_output = audio_output[:, :1,...]   
+            audio_output = audio_output[:, :,...]   
    
         output={"video":video_output, "audio":audio_output}
         if model_type == "noise":
@@ -345,7 +346,8 @@ def model_wrapper(
         The noise predicition model function that is used for DPM-Solver.
         """
         if t_continuous.reshape((-1,)).shape[0] == 1:
-            t_continuous = t_continuous.expand((x.shape[0]))
+            # log.print(">>>>>>")
+            t_continuous = t_continuous.expand((x['video'].shape[0]))
         if guidance_type == "uncond":
             return noise_pred_fn(x, t_continuous)
         elif guidance_type == "classifier":
@@ -1125,7 +1127,7 @@ class DPM_Solver:
         else:
             raise ValueError("For adaptive step size solver, order must be 2 or 3, got {}".format(order))
         while torch.abs((s - t_0)).mean() > t_err:
-            print(f"{torch.abs((s - t_0)).mean()} > {t_err}")
+            # print(f"{torch.abs((s - t_0)).mean()} > {t_err}")
             t = ns.inverse_lambda(lambda_s + h)
           
             x_lower, lower_noise_kwargs = lower_update(x, s, t)

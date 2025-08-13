@@ -677,6 +677,102 @@ class CrossAttentionBlock(nn.Module):
         
         return video_h, audio_h
 
+
+# class CrossAttentionBlock(nn.Module):
+#     def __init__(
+#         self,
+#         channels,
+#         num_heads=1,
+#         num_head_channels=-1,
+#         use_checkpoint=False,
+#         local_window=1,
+#         window_shift=False,
+#     ):
+#         super().__init__()
+#         self.channels = channels
+#         if num_head_channels == -1:
+#             self.num_heads = num_heads
+#         else:
+#             assert channels % num_head_channels == 0
+#             self.num_heads = channels // num_head_channels
+#         self.local_window = local_window
+#         self.window_shift = window_shift
+#         self.use_checkpoint = use_checkpoint
+
+#         self.v_norm = normalization(channels)
+#         self.a_norm = normalization(channels)
+#         self.v_qkv = conv_nd(1, channels, channels * 3, 1)
+#         self.a_qkv = conv_nd(1, channels, channels * 3, 1)
+#         self.attention = nn.MultiheadAttention(embed_dim=channels, num_heads=num_heads, batch_first=True)
+
+#         self.video_proj_out = zero_module(VideoConv(channels, channels, 1, conv_type='3d'))
+#         self.audio_proj_out = zero_module(AudioConv(channels, channels, 1, conv_type='linear'))
+
+#     def apply_rope(self, x, seq_len, dim):
+#         theta = 1.0 / (10000 ** (th.arange(0, dim, 2).float() / dim)).to(x.device)
+#         pos = th.arange(seq_len).float().to(x.device).unsqueeze(-1) * theta
+#         rot = th.cat([th.cos(pos), -th.sin(pos), th.sin(pos), th.cos(pos)], dim=-1)
+#         return x * rot[:seq_len]
+
+#     def apply_2d_rope(self, x, F, H, W, dim):
+#         b, seq_len, c = x.shape
+#         assert seq_len == F * H * W
+#         assert dim == c
+
+#         theta = 1.0 / (10000 ** (th.arange(0, c, 2).float() / c)).to(x.device)
+#         pos_f = th.arange(F).float().to(x.device).unsqueeze(-1) * theta
+#         pos_h = th.arange(H).float().to(x.device).unsqueeze(-1) * theta
+#         pos_w = th.arange(W).float().to(x.device).unsqueeze(-1) * theta
+
+#         rot_f = th.cat([th.cos(pos_f), -th.sin(pos_f), th.sin(pos_f), th.cos(pos_f)], dim=-1)
+#         rot_h = th.cat([th.cos(pos_h), -th.sin(pos_h), th.sin(pos_h), th.cos(pos_h)], dim=-1)
+#         rot_w = th.cat([th.cos(pos_w), -th.sin(pos_w), th.sin(pos_w), th.cos(pos_w)], dim=-1)
+
+#         x_reshaped = x.view(b, F, H, W, c)
+#         x_rot = x_reshaped * rot_f[:, None, None, :] * rot_h[None, :, None, :] * rot_w[None, None, :, :]
+#         return x_rot.view(b, F*H*W, c)
+
+#     def forward(self, video, audio):
+#         return checkpoint(self._forward, (video, audio), self.parameters(), self.use_checkpoint)
+
+#     def _forward(self, video, audio):
+#         b, f, c, h, w = video.shape
+#         _, _, l = audio.shape
+
+#         video_normed = self.v_norm(video)
+#         audio_normed = self.a_norm(audio)
+
+#         video_qkv = self.v_qkv(rearrange(video_normed, 'b f c h w -> b c (f h w)'))
+#         audio_qkv = self.a_qkv(audio_normed)
+
+#         video_q, video_k, video_v = video_qkv.chunk(3, dim=1)
+#         audio_q, audio_k, audio_v = audio_qkv.chunk(3, dim=1)
+
+#         video_q = video_q.permute(0, 2, 1)  # [b, f*h*w, c]
+#         video_k = video_k.permute(0, 2, 1)
+#         video_v = video_v.permute(0, 2, 1)
+#         audio_q = audio_q.permute(0, 2, 1)  # [b, l, c]
+#         audio_k = audio_k.permute(0, 2, 1)
+#         audio_v = audio_v.permute(0, 2, 1)
+
+#         video_q = self.apply_2d_rope(video_q, f, h, w, c)
+#         video_k = self.apply_2d_rope(video_k, f, h, w, c)
+#         audio_q = self.apply_rope(audio_q, l, c)
+#         audio_k = self.apply_rope(audio_k, l, c)
+
+#         video_h, _ = self.attention(video_q, audio_k, audio_v)
+#         audio_h, _ = self.attention(audio_q, video_k, video_v)
+
+#         video_h = rearrange(video_h, 'b (f h w) c -> b f c h w', f=f, h=h, w=w)
+#         audio_h = audio_h.permute(0, 2, 1)
+
+#         video_h = self.video_proj_out(video_h) + video
+#         audio_h = self.audio_proj_out(audio_h) + audio
+
+#         return video_h, audio_h
+
+
+
 class InitialBlock(nn.Module):
     def __init__(
         self,
@@ -1104,7 +1200,7 @@ class MultimodalUNet(nn.Module):
 
 if __name__=='__main__':
     import time
-    device = th.device("cuda:7")
+    device = th.device("cuda")
     
 
     model_channels = 192
